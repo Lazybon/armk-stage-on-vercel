@@ -9,28 +9,13 @@ const app = express()
 
 // Middleware для обработки CORS
 app.use((req, res, next) => {
-  // Разрешаем запросы с любых источников (для разработки)
   res.header('Access-Control-Allow-Origin', '*')
-
-  // Разрешаем конкретные источники (более безопасно)
-  // const allowedOrigins = ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173']
-  // const origin = req.headers.origin
-  // if (allowedOrigins.includes(origin)) {
-  //   res.header('Access-Control-Allow-Origin', origin)
-  // }
-
-  // Разрешаемые методы
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
-
-  // Разрешаемые заголовки
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization')
-
-  // Разрешаем отправку cookies и авторизационных заголовков
   res.header('Access-Control-Allow-Credentials', 'true')
 
-  // Обработка preflight запросов (OPTIONS)
   if (req.method === 'OPTIONS') {
-    res.header('Access-Control-Max-Age', '86400') // 24 часа кэширования
+    res.header('Access-Control-Max-Age', '86400')
     return res.status(200).end()
   }
 
@@ -40,8 +25,11 @@ app.use((req, res, next) => {
 // Middleware для обработки JSON
 app.use(express.json())
 
-// Middleware для обработки JSON
-app.use(express.json())
+// Middleware для логирования запросов
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url} - ${new Date().toISOString()}`)
+  next()
+})
 
 // Home route - HTML
 app.get('/', (req, res) => {
@@ -51,21 +39,31 @@ app.get('/', (req, res) => {
       <head>
         <meta charset="utf-8"/>
         <title>Mock Device Server</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 40px; }
+          h1 { color: #333; }
+          ul { list-style-type: none; padding: 0; }
+          li { margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 4px; }
+          code { background: #e8e8e8; padding: 2px 6px; border-radius: 3px; }
+        </style>
       </head>
       <body>
         <h1>Mock Device Server</h1>
-        <p>API эндпоинты для мок-данных устройств</p>
+        <p>API эндпоинты для мок-данных устройств (CORS разрешены)</p>
         <ul>
-          <li>GET /devices</li>
-          <li>PUT /devices/cash-register/work-shift</li>
-          <li>POST /devices/pos/reports/z</li>
-          <li>POST /devices/cash-register/reports/x</li>
-          <li>POST /devices/pos/reports/x</li>
-          <li>GET /devices/cash-register/shift-totals</li>
-          <li>POST /devices/pos/refunds</li>
-          <li>POST /devices/pos/payments</li>
-          <li>POST /devices/cash-register/receipts</li>
+          <li><code>GET /devices</code></li>
+          <li><code>PUT /devices/cash-register/work-shift</code></li>
+          <li><code>POST /devices/pos/reports/z</code></li>
+          <li><code>POST /devices/cash-register/reports/x</code></li>
+          <li><code>POST /devices/pos/reports/x</code></li>
+          <li><code>GET /devices/cash-register/shift-totals</code></li>
+          <li><code>POST /devices/pos/refunds</code></li>
+          <li><code>POST /devices/pos/payments</code></li>
+          <li><code>POST /devices/cash-register/receipts</code></li>
+          <li><code>POST /devices/cash-register/non-fiscals</code></li>
+          <li><code>GET /healthz</code></li>
         </ul>
+        <p>Для тестирования CORS все методы и заголовки разрешены.</p>
       </body>
     </html>
   `)
@@ -97,14 +95,12 @@ app.get('/devices', (req, res) => {
 app.put('/devices/cash-register/work-shift', (req, res) => {
   console.log('PUT /devices/cash-register/work-shift:', req.body)
 
-  // Проверяем наличие isActive в теле запроса
   if (req.body.isActive === undefined) {
     return res.status(400).json({
       message: 'Поле isActive обязательно'
     })
   }
 
-  // Мок-ответ при успешном открытии/закрытии смены
   res.status(200).json({
     success: true,
     message: req.body.isActive ? 'Смена открыта' : 'Смена закрыта',
@@ -113,11 +109,143 @@ app.put('/devices/cash-register/work-shift', (req, res) => {
   })
 })
 
-// 3. Z-отчет для POS (POST запрос)
+// 3. Создание фискального чека (POST запрос)
+app.post('/devices/cash-register/receipts', (req, res) => {
+  console.log('POST /devices/cash-register/receipts requested')
+  console.log('Payload:', JSON.stringify(req.body, null, 2))
+
+  // Проверяем наличие обязательных полей
+  if (!req.body.items || !Array.isArray(req.body.items) || req.body.items.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Поле items обязательно и должно содержать массив позиций'
+    })
+  }
+
+  if (!req.body.payment || !req.body.payment.sum || req.body.payment.sum <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Неверная сумма платежа'
+    })
+  }
+
+  if (!req.body.type) {
+    return res.status(400).json({
+      success: false,
+      message: 'Тип операции обязателен (sell, refund, etc.)'
+    })
+  }
+
+  // Мок-ответ для фискального чека
+  const receiptResponse = {
+    "success": true,
+    "fiscalDocumentDateTime": new Date().toISOString().replace('Z', '+03:00'),
+    "fiscalDocumentNumber": Math.floor(Math.random() * 100000),
+    "fiscalDocumentSign": Math.floor(Math.random() * 1000000000).toString(),
+    "fiscalReceiptNumber": Math.floor(Math.random() * 1000),
+    "fnNumber": "9960440300757395",
+    "fnsUrl": "www.nalog.gov.ru",
+    "registrationNumber": "0004622719017597",
+    "shiftNumber": 116,
+    "total": req.body.payment.sum || 1500,
+    "receiptType": req.body.type,
+    "fiscalMark": Math.floor(Math.random() * 1000000000000000).toString(),
+    "fiscalSign": Math.floor(Math.random() * 1000000000).toString(),
+    "processedAt": new Date().toISOString()
+  }
+
+  console.log('Response:', JSON.stringify(receiptResponse, null, 2))
+  res.status(200).json(receiptResponse)
+})
+
+// 4. Печать нефискального документа (POST запрос)
+app.post('/devices/cash-register/non-fiscals', (req, res) => {
+  console.log('POST /devices/cash-register/non-fiscals requested')
+  console.log('Payload items:', req.body?.length || 0)
+
+  if (!Array.isArray(req.body) || req.body.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Тело запроса должно быть массивом элементов для печати'
+    })
+  }
+
+  // Мок-ответ для нефискального документа
+  const response = {
+    "success": true,
+    "message": "Нефискальный документ успешно напечатан",
+    "printedAt": new Date().toISOString(),
+    "itemsCount": req.body.length,
+    "documentType": "non-fiscal",
+    "deviceId": "cash-register-mock-001"
+  }
+
+  console.log('Non-fiscal response:', response)
+  res.status(200).json(response)
+})
+
+// 5. Платежи через POS (POST запрос)
+app.post('/devices/pos/payments', (req, res) => {
+  console.log('POST /devices/pos/payments requested:', req.body)
+
+  if (!req.body.amount || req.body.amount <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Неверная сумма платежа'
+    })
+  }
+
+  const paymentResponse = {
+    "amount": req.body.amount || 100.5,
+    "slip": "Текстовое содержимое слипа\nДата операции: " + new Date().toLocaleString() +
+        "\nСумма: " + (req.body.amount || 100.5) + " руб.\nТип операции: Оплата\nСтатус: Успешно",
+    "transactionNumber": "100" + Math.floor(Math.random() * 10000000),
+    "status": "COMPLETED",
+    "processedAt": new Date().toISOString(),
+    "authCode": Math.floor(Math.random() * 1000000).toString(),
+    "rrn": Math.floor(Math.random() * 1000000000000).toString()
+  }
+
+  res.status(200).json(paymentResponse)
+})
+
+// 6. Возврат для POS (POST запрос)
+app.post('/devices/pos/refunds', (req, res) => {
+  console.log('POST /devices/pos/refunds requested:', req.body)
+
+  const { amount, transactionNumber } = req.body
+
+  if (!amount || amount <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Неверная сумма возврата'
+    })
+  }
+
+  if (!transactionNumber) {
+    return res.status(400).json({
+      success: false,
+      message: 'Номер транзакции обязателен'
+    })
+  }
+
+  res.status(200).json({
+    success: true,
+    refundId: `REF_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    transactionNumber: transactionNumber,
+    amount: amount,
+    status: 'COMPLETED',
+    processedAt: new Date().toISOString(),
+    deviceId: 'POS_001',
+    operator: 'mock_operator',
+    slip: "Слип возврата\nСумма: " + amount + " руб.\nТранзакция: " + transactionNumber
+  })
+})
+
+// 7. Z-отчет для POS (POST запрос)
 app.post('/devices/pos/reports/z', (req, res) => {
   console.log('POST /devices/pos/reports/z requested')
 
-  // Мок-ответ для Z-отчета
   res.status(200).json({
     success: true,
     reportType: 'Z',
@@ -127,15 +255,16 @@ app.post('/devices/pos/reports/z', (req, res) => {
       sales: Math.floor(Math.random() * 100000) / 100,
       refunds: Math.floor(Math.random() * 10000) / 100,
       transactions: Math.floor(Math.random() * 100)
-    }
+    },
+    shiftNumber: Math.floor(Math.random() * 1000),
+    shiftClosedAt: new Date().toISOString()
   })
 })
 
-// 4. X-отчет для кассового аппарата (POST запрос)
+// 8. X-отчет для кассового аппарата (POST запрос)
 app.post('/devices/cash-register/reports/x', (req, res) => {
   console.log('POST /devices/cash-register/reports/x requested')
 
-  // Мок-ответ для X-отчета кассового аппарата
   res.status(200).json({
     success: true,
     reportType: 'X',
@@ -154,11 +283,10 @@ app.post('/devices/cash-register/reports/x', (req, res) => {
   })
 })
 
-// 5. X-отчет для POS (POST запрос)
+// 9. X-отчет для POS (POST запрос)
 app.post('/devices/pos/reports/x', (req, res) => {
   console.log('POST /devices/pos/reports/x requested')
 
-  // Мок-ответ для X-отчета POS
   const mockData = {
     success: true,
     reportType: 'X',
@@ -181,11 +309,10 @@ app.post('/devices/pos/reports/x', (req, res) => {
   res.status(200).json(mockData)
 })
 
-// 6. Итоги смены для кассового аппарата (GET запрос)
+// 10. Итоги смены для кассового аппарата (GET запрос)
 app.get('/devices/cash-register/shift-totals', (req, res) => {
   console.log('GET /devices/cash-register/shift-totals requested')
 
-  // Мок-данные итогов смены (как вы указали)
   const shiftTotals = {
     "incomes": {
       "cash": 200,
@@ -200,96 +327,7 @@ app.get('/devices/cash-register/shift-totals', (req, res) => {
   res.status(200).json(shiftTotals)
 })
 
-// 7. Платежи через POS (POST запрос)
-app.post('/devices/pos/payments', (req, res) => {
-  console.log('POST /devices/pos/payments requested:', req.body)
-
-  // Проверяем наличие суммы
-  if (!req.body.amount || req.body.amount <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Неверная сумма платежа'
-    })
-  }
-
-  // Мок-ответ для платежа через POS
-  const paymentResponse = {
-    "amount": 100.5,
-    "slip": "Текстовое содержимое слипа",
-    "transactionNumber": "1001324684"
-  }
-
-  res.status(200).json(paymentResponse)
-})
-
-// 8. Создание чека кассового аппарата (POST запрос)
-app.post('/devices/cash-register/receipts', (req, res) => {
-  console.log('POST /devices/cash-register/receipts requested:', req.body)
-
-  // Проверяем наличие необходимых данных
-  if (!req.body.total || req.body.total <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Неверная сумма чека'
-    })
-  }
-
-  // Мок-ответ для чека кассового аппарата
-  const receiptResponse = {
-    "fiscalDocumentDateTime": "2022-08-18T15:44:00+03:00",
-    "fiscalDocumentNumber": 25144,
-    "fiscalDocumentSign": "908424925",
-    "fiscalReceiptNumber": 312,
-    "fnNumber": "9960440300757395",
-    "fnsUrl": "www.nalog.gov.ru",
-    "registrationNumber": "0004622719017597",
-    "shiftNumber": 116,
-    "total": 2000
-  }
-
-  // Можно обновить некоторые поля на основе запроса
-  if (req.body.total) {
-    receiptResponse.total = req.body.total
-  }
-
-  res.status(200).json(receiptResponse)
-})
-
-// 9. Возврат для POS (POST запрос)
-app.post('/devices/pos/refunds', (req, res) => {
-  console.log('POST /devices/pos/refunds requested:', req.body)
-
-  const { amount, transactionNumber } = req.body
-
-  // Валидация входных данных
-  if (!amount || amount <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Неверная сумма возврата'
-    })
-  }
-
-  if (!transactionNumber) {
-    return res.status(400).json({
-      success: false,
-      message: 'Номер транзакции обязателен'
-    })
-  }
-
-  // Мок-ответ успешного возврата
-  res.status(200).json({
-    success: true,
-    refundId: `REF_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-    transactionNumber: transactionNumber,
-    amount: amount,
-    status: 'COMPLETED',
-    processedAt: new Date().toISOString(),
-    deviceId: 'POS_001',
-    operator: 'mock_operator'
-  })
-})
-
-// 10. Проверка здоровья сервера
+// 11. Проверка здоровья сервера
 app.get('/healthz', (req, res) => {
   res.status(200).json({
     status: 'ok',
@@ -300,7 +338,9 @@ app.get('/healthz', (req, res) => {
       'GET /devices/cash-register/shift-totals',
       'POST /devices/pos/payments',
       'POST /devices/cash-register/receipts',
-      'POST /devices/pos/refunds'
+      'POST /devices/cash-register/non-fiscals',
+      'POST /devices/pos/refunds',
+      'GET /healthz'
     ]
   })
 })
@@ -319,6 +359,7 @@ app.use('*', (req, res) => {
       'GET /devices/cash-register/shift-totals',
       'POST /devices/pos/payments',
       'POST /devices/cash-register/receipts',
+      'POST /devices/cash-register/non-fiscals',
       'POST /devices/pos/refunds',
       'GET /healthz'
     ]
