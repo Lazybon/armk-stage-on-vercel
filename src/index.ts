@@ -7,6 +7,39 @@ const __dirname = path.dirname(__filename)
 
 const app = express()
 
+// Middleware для обработки CORS
+app.use((req, res, next) => {
+  // Разрешаем запросы с любых источников (для разработки)
+  res.header('Access-Control-Allow-Origin', '*')
+
+  // Разрешаем конкретные источники (более безопасно)
+  // const allowedOrigins = ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173']
+  // const origin = req.headers.origin
+  // if (allowedOrigins.includes(origin)) {
+  //   res.header('Access-Control-Allow-Origin', origin)
+  // }
+
+  // Разрешаемые методы
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+
+  // Разрешаемые заголовки
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization')
+
+  // Разрешаем отправку cookies и авторизационных заголовков
+  res.header('Access-Control-Allow-Credentials', 'true')
+
+  // Обработка preflight запросов (OPTIONS)
+  if (req.method === 'OPTIONS') {
+    res.header('Access-Control-Max-Age', '86400') // 24 часа кэширования
+    return res.status(200).end()
+  }
+
+  next()
+})
+
+// Middleware для обработки JSON
+app.use(express.json())
+
 // Middleware для обработки JSON
 app.use(express.json())
 
