@@ -161,12 +161,17 @@ app.post('/devices/cash-register/receipts', (req, res) => {
 // 4. Печать нефискального документа (POST запрос)
 app.post('/devices/cash-register/non-fiscals', (req, res) => {
   console.log('POST /devices/cash-register/non-fiscals requested')
-  console.log('Payload items:', req.body?.length || 0)
+  // Извлекаем items из тела запроса
+  const { items } = req.body
 
-  if (!Array.isArray(req.body) || req.body.length === 0) {
+  console.log('Request body:', req.body)
+  console.log('Items count:', items?.length || 0)
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({
       success: false,
-      message: 'Тело запроса должно быть массивом элементов для печати'
+      message: 'Поле items обязательно и должно содержать массив элементов для печати',
+      receivedBody: req.body
     })
   }
 
@@ -175,7 +180,7 @@ app.post('/devices/cash-register/non-fiscals', (req, res) => {
     "success": true,
     "message": "Нефискальный документ успешно напечатан",
     "printedAt": new Date().toISOString(),
-    "itemsCount": req.body.length,
+    "itemsCount": items.length,
     "documentType": "non-fiscal",
     "deviceId": "cash-register-mock-001"
   }
